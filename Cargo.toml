@@ -1,0 +1,9 @@
+[package]
+name = "cpal-tests"
+version = "0.1.0"
+authors = ["Thibaut REMY <thibaut@thibaut.re>"]
+
+[dependencies]
+cpal = "0.8.2"
+rand = "0.5.5"
+hound = "3.4.0"
