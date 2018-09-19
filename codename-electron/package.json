@@ -1,0 +1,12 @@
+{
+  "name": "codename-electron",
+  "version": "0.0.1",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "electron": "^3.0.0-beta.12"
+  },
+  "scripts": {
+    "start": "electron ."
+  }
+}

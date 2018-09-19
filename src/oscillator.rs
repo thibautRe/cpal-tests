@@ -69,6 +69,10 @@ impl Oscillator {
         value.max(-1.0).min(1.0)
     }
 
+    pub fn get_frequency(&self) -> f32 {
+        self.frequency
+    }
+
     pub fn set_frequency(&mut self, target_frequency: f32) {
         self.frequency = target_frequency;
     }

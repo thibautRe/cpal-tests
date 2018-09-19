@@ -25,6 +25,7 @@ pub struct BiquadFilter {
 
 impl BiquadFilter {
     // Creates a new filter based on a type, a frequency and a quality factor
+    #[allow(non_snake_case)]
     pub fn new(sample_rate: f32, frequency: f32, Q: f32, filter_type: BiquadFilterTypes) -> Self {
         Self {
             sample_rate,
@@ -37,6 +38,7 @@ impl BiquadFilter {
 
     /// Returns the next filtered value based on 5 inputs: current, previous and last previous
     /// entry value, and previous and last previous output value of the filter.
+    /// https://dxr.mozilla.org/mozilla-central/source/dom/media/webaudio/blink/Biquad.h#100
     pub fn get_next_value(&self, x: f32, x1: f32, x2: f32, y1: f32, y2: f32) -> f32 {
         let c = &self.coefficients;
         c.b0 / c.a0 * x + c.b1 / c.a0 * x1 + c.b2 / c.a0 * x2 - c.a1 / c.a0 * y1 - c.a2 / c.a0 * y2
@@ -54,6 +56,7 @@ impl BiquadFilter {
 
     /// Calculate coefficients
     /// Based on http://www.musicdsp.org/files/Audio-EQ-Cookbook.txt
+    #[allow(non_snake_case)]
     fn calculate_coefficients(
         sample_rate: f32,
         frequency: f32,

@@ -1,13 +1,21 @@
 extern crate cpal;
-extern crate hound;
+extern crate tokio;
 
 mod filter;
 mod instrument;
 mod oscillator;
 
+use std::collections::VecDeque;
+use std::io::BufReader;
+use std::sync::{Arc, Mutex};
+use std::thread;
+
 use instrument::Instrument;
 use oscillator::Oscillator;
-use std::collections::VecDeque;
+
+use tokio::io;
+use tokio::net::TcpListener;
+use tokio::prelude::*;
 
 struct TripleOsc {
     osc1: Oscillator,
@@ -41,7 +49,6 @@ fn main() {
     let event_loop = cpal::EventLoop::new();
     let stream_id = event_loop.build_output_stream(&device, &format).unwrap();
     event_loop.play_stream(stream_id);
-
     let sample_rate = format.sample_rate.0 as f32;
 
     // Initialize ring buffers with empty values
@@ -63,15 +70,21 @@ fn main() {
     //     sample_rate,
     // };
 
-    let mut filter_freq_osc = Oscillator::new(2.0, oscillator::Types::Sawtooth);
+    let filter_freq_osc = Arc::new(Mutex::new(Oscillator::new(
+        2.0,
+        oscillator::Types::Sawtooth,
+    )));
     let mut test_filter =
         filter::BiquadFilter::new(sample_rate, 200.0, 2.7, filter::BiquadFilterTypes::LowPass);
+
+    let filter_freq_osc = Arc::clone(&filter_freq_osc);
 
     // Generate the next value
     let mut next_value = || {
         osc1.set_exp_frequency((1.0 + osc_fm.get_value(sample_rate)) * 100.0 + 100.0, 10.0);
         let value = osc1.get_value(sample_rate);
-        test_filter.set_frequency((filter_freq_osc.get_value(sample_rate) + 1.0) * 500.0);
+        test_filter
+            .set_frequency((filter_freq_osc.lock().unwrap().get_value(sample_rate) + 1.0) * 500.0);
 
         let filtered = test_filter.get_next_value(
             value,
@@ -147,5 +160,39 @@ fn main() {
     // };
 
     // record();
+
+    let addr = "127.0.0.1:6142".parse().unwrap();
+    let listener = TcpListener::bind(&addr).unwrap();
+
+    let filter_freq_osc = Arc::clone(&filter_freq_osc);
+
+    let server = listener
+        .incoming()
+        .map_err(|e| println!("failed to accept socket; error = {:?}", e))
+        .for_each(move |socket| {
+            println!("New socket: {}", socket.peer_addr().unwrap());
+            let (reader, writer) = socket.split();
+            let lines = io::lines(BufReader::new(reader));
+
+            let responses = lines.map(|line| println!("{}", line));
+
+            let filter_freq_osc = Arc::clone(&filter_freq_osc);
+
+            let writes = responses.fold(writer, move |writer, _| {
+                let mut filter_freq_osc = filter_freq_osc.lock().unwrap();
+                let freq = filter_freq_osc.get_frequency();
+                filter_freq_osc.set_frequency(freq * 2.0);
+                let response = String::from("Respones").into_bytes();
+                io::write_all(writer, response).map(|(w, _)| w)
+            });
+
+            tokio::spawn(writes.then(|_| Ok(())))
+        });
+
+    thread::spawn(move || {
+        tokio::run(server);
+        println!("Done!");
+    });
+
     play();
 }
