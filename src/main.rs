@@ -10,7 +10,6 @@ mod filter;
 mod instrument;
 mod oscillator;
 
-use std::collections::VecDeque;
 use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -29,9 +28,16 @@ struct TripleOsc {
     sample_rate: f32,
 }
 
-#[derive(Serialize, Deserialize)]
-struct TestStruct {
+#[derive(Serialize, Deserialize, Debug)]
+enum Parameter {
+    Q,
+    Frequency,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Message {
     value: f32,
+    parameter: Parameter,
 }
 
 impl Instrument for TripleOsc {
@@ -61,15 +67,7 @@ fn main() {
     event_loop.play_stream(stream_id);
     let sample_rate = format.sample_rate.0 as f32;
 
-    // Initialize ring buffers with empty values
-    let mut before_filter = VecDeque::<f32>::new();
-    before_filter.push_back(0.0);
-    before_filter.push_back(0.0);
-    let mut after_filter = VecDeque::<f32>::new();
-    after_filter.push_back(0.0);
-    after_filter.push_back(0.0);
-
-    let mut osc_fm = Oscillator::new(4.0, oscillator::Types::Sawtooth);
+    let mut osc_fm = Oscillator::new(4.0, oscillator::Types::Sine);
     let mut osc1 = Oscillator::new(440.0, oscillator::Types::Square);
     // let mut osc2 = Oscillator::new(100.0, oscillator::Types::Triangle);
 
@@ -80,36 +78,19 @@ fn main() {
     //     sample_rate,
     // };
 
-    let filter_freq_osc = Arc::new(Mutex::new(Oscillator::new(
-        2.0,
-        oscillator::Types::Sawtooth,
+    let test_filter = Arc::new(Mutex::new(filter::BiquadFilter::new(
+        sample_rate,
+        200.0,
+        2.7,
+        filter::BiquadFilterTypes::LowPass,
     )));
-    let mut test_filter =
-        filter::BiquadFilter::new(sample_rate, 200.0, 2.7, filter::BiquadFilterTypes::LowPass);
-
-    let filter_freq_osc = Arc::clone(&filter_freq_osc);
 
     // Generate the next value
     let mut next_value = || {
         osc1.set_exp_frequency((1.0 + osc_fm.get_value(sample_rate)) * 100.0 + 100.0, 10.0);
         let value = osc1.get_value(sample_rate);
-        test_filter
-            .set_frequency((filter_freq_osc.lock().unwrap().get_value(sample_rate) + 1.0) * 500.0);
 
-        let filtered = test_filter.get_next_value(
-            value,
-            before_filter[1],
-            before_filter[0],
-            after_filter[1],
-            after_filter[0],
-        );
-
-        before_filter.push_back(value);
-        before_filter.pop_front();
-        after_filter.push_back(filtered);
-        after_filter.pop_front();
-
-        filtered
+        test_filter.lock().unwrap().get_next_value(value)
     };
 
     let play = || {
@@ -174,8 +155,7 @@ fn main() {
     let addr = "127.0.0.1:6142".parse().unwrap();
     let listener = TcpListener::bind(&addr).unwrap();
 
-    let filter_freq_osc = Arc::clone(&filter_freq_osc);
-
+    let test_filter = Arc::clone(&test_filter);
     let server = listener
         .incoming()
         .map_err(|e| println!("failed to accept socket; error = {:?}", e))
@@ -185,15 +165,19 @@ fn main() {
             let lines = io::lines(BufReader::new(reader));
 
             let responses = lines.map(|line| {
-                let test_struct: TestStruct = serde_json::from_str(&line).unwrap();
-                test_struct
+                let message: Message = serde_json::from_str(&line).unwrap();
+                message
             });
 
-            let filter_freq_osc = Arc::clone(&filter_freq_osc);
+            let test_filter = Arc::clone(&test_filter);
+            let writes = responses.fold(writer, move |writer, message| {
+                let mut test_filter = test_filter.lock().unwrap();
 
-            let writes = responses.fold(writer, move |writer, line| {
-                let mut filter_freq_osc = filter_freq_osc.lock().unwrap();
-                filter_freq_osc.set_frequency(line.value);
+                match message.parameter {
+                    Parameter::Frequency => test_filter.set_frequency(message.value * 200.0),
+                    Parameter::Q => test_filter.set_Q(0.1 + message.value * 10.0),
+                };
+
                 let response = String::from("Respones").into_bytes();
                 io::write_all(writer, response).map(|(w, _)| w)
             });
