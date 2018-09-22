@@ -1,4 +1,5 @@
 extern crate cpal;
+extern crate hound;
 extern crate tokio;
 
 #[macro_use]
@@ -10,6 +11,7 @@ mod filter;
 mod instrument;
 mod oscillator;
 
+use std::collections::VecDeque;
 use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -29,15 +31,31 @@ struct TripleOsc {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-enum Parameter {
+enum InstrumentParameter {
     Q,
     Frequency,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Message {
+struct InstrumentMessage {
     value: f32,
-    parameter: Parameter,
+    parameter: InstrumentParameter,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum RootDataTargets {
+    OutputBuffer,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct RootDataMessage {
+    target: RootDataTargets,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum Message {
+    InstrumentMessage(InstrumentMessage),
+    RootDataMessage(RootDataMessage),
 }
 
 impl Instrument for TripleOsc {
@@ -67,8 +85,19 @@ fn main() {
     event_loop.play_stream(stream_id);
     let sample_rate = format.sample_rate.0 as f32;
 
-    let mut osc_fm = Oscillator::new(4.0, oscillator::Types::Sine);
+    let mut osc_fm = Oscillator::new(2.0, oscillator::Types::Sawtooth);
     let mut osc1 = Oscillator::new(440.0, oscillator::Types::Square);
+    let output_values_size = 100;
+    let output_values_freq = 8;
+    let mut output_values_clock = 0;
+    let mut output_values = VecDeque::<f32>::with_capacity(output_values_size);
+
+    for _ in 0..output_values_size {
+        output_values.push_back(0.0);
+    }
+
+    let output_values = Arc::new(Mutex::new(output_values));
+
     // let mut osc2 = Oscillator::new(100.0, oscillator::Types::Triangle);
 
     // let mut triple_osc = TripleOsc {
@@ -90,7 +119,18 @@ fn main() {
         osc1.set_exp_frequency((1.0 + osc_fm.get_value(sample_rate)) * 100.0 + 100.0, 10.0);
         let value = osc1.get_value(sample_rate);
 
-        test_filter.lock().unwrap().get_next_value(value)
+        let output = test_filter.lock().unwrap().get_next_value(value);
+
+        // Save the output in the values ringbuffer
+        if output_values_clock == output_values_freq - 1 {
+            output_values_clock = 0;
+            let mut output_values = output_values.lock().unwrap();
+            output_values.pop_front();
+            output_values.push_back(output);
+        } else {
+            output_values_clock += 1;
+        }
+        output
     };
 
     let play = || {
@@ -154,8 +194,8 @@ fn main() {
 
     let addr = "127.0.0.1:6142".parse().unwrap();
     let listener = TcpListener::bind(&addr).unwrap();
-
-    let test_filter = Arc::clone(&test_filter);
+    let output_values = output_values.clone();
+    let test_filter = test_filter.clone();
     let server = listener
         .incoming()
         .map_err(|e| println!("failed to accept socket; error = {:?}", e))
@@ -169,17 +209,35 @@ fn main() {
                 message
             });
 
-            let test_filter = Arc::clone(&test_filter);
+            let output_values = output_values.clone();
+            let test_filter = test_filter.clone();
             let writes = responses.fold(writer, move |writer, message| {
                 let mut test_filter = test_filter.lock().unwrap();
+                let ok_response = String::from("{\"status\": \"OK\"}\n");
 
-                match message.parameter {
-                    Parameter::Frequency => test_filter.set_frequency(message.value * 200.0),
-                    Parameter::Q => test_filter.set_Q(0.1 + message.value * 10.0),
+                let response = match message {
+                    // Change an instrument's parameter
+                    Message::InstrumentMessage(message) => match message.parameter {
+                        InstrumentParameter::Frequency => {
+                            test_filter.set_frequency(message.value * 200.0);
+                            ok_response
+                        }
+                        InstrumentParameter::Q => {
+                            test_filter.set_Q(0.1 + message.value * 10.0);
+                            ok_response
+                        }
+                    },
+
+                    // Access root data
+                    Message::RootDataMessage(message) => match message.target {
+                        RootDataTargets::OutputBuffer => {
+                            let output_values = output_values.lock().unwrap();
+                            format!("{}\n", serde_json::to_string(&(*output_values)).unwrap())
+                        }
+                    },
                 };
 
-                let response = String::from("Respones").into_bytes();
-                io::write_all(writer, response).map(|(w, _)| w)
+                io::write_all(writer, response.into_bytes()).map(|(w, _)| w)
             });
 
             tokio::spawn(writes.then(|_| Ok(())))
