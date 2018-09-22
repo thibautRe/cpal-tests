@@ -8,12 +8,13 @@ socket.on('data', data => {
   console.log(data);
 });
 
-const send = () => {
-  socket.write(`Hello there\n`);
+const send = (value) => {
+  const json = JSON.stringify({ value })
+  socket.write(`${json}\n`)
 }
 
 if (typeof window !== undefined) {
-  document.getElementById('test').addEventListener('click', async () => {
-    send()
+  document.getElementById('range').addEventListener('input', (e) => {
+    send(parseInt(e.target.value))
   })
 }

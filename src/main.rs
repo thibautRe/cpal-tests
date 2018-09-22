@@ -1,6 +1,11 @@
 extern crate cpal;
 extern crate tokio;
 
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
+extern crate serde_json;
+
 mod filter;
 mod instrument;
 mod oscillator;
@@ -22,6 +27,11 @@ struct TripleOsc {
     osc2: Oscillator,
     osc3: Oscillator,
     sample_rate: f32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TestStruct {
+    value: f32,
 }
 
 impl Instrument for TripleOsc {
@@ -174,14 +184,16 @@ fn main() {
             let (reader, writer) = socket.split();
             let lines = io::lines(BufReader::new(reader));
 
-            let responses = lines.map(|line| println!("{}", line));
+            let responses = lines.map(|line| {
+                let test_struct: TestStruct = serde_json::from_str(&line).unwrap();
+                test_struct
+            });
 
             let filter_freq_osc = Arc::clone(&filter_freq_osc);
 
-            let writes = responses.fold(writer, move |writer, _| {
+            let writes = responses.fold(writer, move |writer, line| {
                 let mut filter_freq_osc = filter_freq_osc.lock().unwrap();
-                let freq = filter_freq_osc.get_frequency();
-                filter_freq_osc.set_frequency(freq * 2.0);
+                filter_freq_osc.set_frequency(line.value);
                 let response = String::from("Respones").into_bytes();
                 io::write_all(writer, response).map(|(w, _)| w)
             });
