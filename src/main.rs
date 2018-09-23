@@ -53,9 +53,21 @@ struct RootDataMessage {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-enum Message {
+enum MessageTypes {
     InstrumentMessage(InstrumentMessage),
     RootDataMessage(RootDataMessage),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Message {
+    id: f32,
+    payload: MessageTypes,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Response<T> {
+    id: f32,
+    payload: Option<T>,
 }
 
 impl Instrument for TripleOsc {
@@ -213,30 +225,36 @@ fn main() {
             let test_filter = test_filter.clone();
             let writes = responses.fold(writer, move |writer, message| {
                 let mut test_filter = test_filter.lock().unwrap();
-                let ok_response = String::from("{\"status\": \"OK\"}\n");
+                let id = message.id;
+                let default_res: Response<f32> = Response { id, payload: None };
 
-                let response = match message {
+                let mut response = match message.payload {
                     // Change an instrument's parameter
-                    Message::InstrumentMessage(message) => match message.parameter {
+                    MessageTypes::InstrumentMessage(message) => match message.parameter {
                         InstrumentParameter::Frequency => {
                             test_filter.set_frequency(message.value * 200.0);
-                            ok_response
+                            serde_json::to_string(&default_res).unwrap()
                         }
                         InstrumentParameter::Q => {
                             test_filter.set_Q(0.1 + message.value * 10.0);
-                            ok_response
+                            serde_json::to_string(&default_res).unwrap()
                         }
                     },
 
                     // Access root data
-                    Message::RootDataMessage(message) => match message.target {
+                    MessageTypes::RootDataMessage(message) => match message.target {
                         RootDataTargets::OutputBuffer => {
-                            let output_values = output_values.lock().unwrap();
-                            format!("{}\n", serde_json::to_string(&(*output_values)).unwrap())
+                            let output_values = &*output_values.lock().unwrap();
+                            let res = Response {
+                                id,
+                                payload: Some(output_values),
+                            };
+                            serde_json::to_string(&res).unwrap()
                         }
                     },
                 };
 
+                response.push_str("\n");
                 io::write_all(writer, response.into_bytes()).map(|(w, _)| w)
             });
 
