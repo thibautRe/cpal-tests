@@ -16,6 +16,16 @@ pub enum BiquadFilterTypes {
     HighPass,
 }
 
+/// Bi-quadratic filter, used for lowpass, highpass and other types
+/// of "simple" filters
+///
+/// ```
+/// BiquadFilter::new(
+///     sample_rate,
+///     2000.0,
+///     2.7,
+///     filter::BiquadFilterTypes::LowPass,
+/// ))
 #[allow(non_snake_case)]
 pub struct BiquadFilter {
     sample_rate: f32,
@@ -76,10 +86,19 @@ impl BiquadFilter {
         self.update_coefficients();
     }
 
+    pub fn get_frequency(&self) -> f32 {
+        self.frequency
+    }
+
     #[allow(non_snake_case)]
     pub fn set_Q(&mut self, Q: f32) {
         self.Q = Q;
         self.update_coefficients();
+    }
+
+    #[allow(non_snake_case)]
+    pub fn get_Q(&self) -> f32 {
+        self.Q
     }
 
     fn update_coefficients(&mut self) {
@@ -98,21 +117,22 @@ impl BiquadFilter {
     ) -> BiquadFilterCoefficients {
         let w0 = 2.0 * PI * frequency / sample_rate;
         let alpha = w0.sin() / (2.0 * Q);
+        let w0cos = w0.cos();
         match filter_type {
             BiquadFilterTypes::LowPass => BiquadFilterCoefficients {
-                b0: (1.0 - w0.cos()) / 2.0,
-                b1: 1.0 - w0.cos(),
-                b2: (1.0 - w0.cos()) / 2.0,
+                b0: (1.0 - w0cos) / 2.0,
+                b1: 1.0 - w0cos,
+                b2: (1.0 - w0cos) / 2.0,
                 a0: 1.0 + alpha,
-                a1: -2.0 * w0.cos(),
+                a1: -2.0 * w0cos,
                 a2: 1.0 - alpha,
             },
             BiquadFilterTypes::HighPass => BiquadFilterCoefficients {
-                b0: (1.0 + w0.cos()) / 2.0,
-                b1: -(1.0 + w0.cos()),
-                b2: (1.0 + w0.cos()) / 2.0,
+                b0: (1.0 + w0cos) / 2.0,
+                b1: -(1.0 + w0cos),
+                b2: (1.0 + w0cos) / 2.0,
                 a0: 1.0 + alpha,
-                a1: -2.0 * w0.cos(),
+                a1: -2.0 * w0cos,
                 a2: 1.0 - alpha,
             },
         }

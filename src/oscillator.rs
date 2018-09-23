@@ -3,22 +3,22 @@ extern crate rand;
 use self::rand::prelude::*;
 use std::f32::consts::PI;
 
-#[allow(dead_code)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Types {
     Sine,
     Square,
     Sawtooth,
     Triangle,
     Random,
-    /// The custom type takes a Box of a closure that takes one parameter: the phase
-    /// of the oscillator, between 0 and 2*PI
-    /// Types::Custom(Box::new(|phase: f32| 0.5 * phase.sin())),
-    Custom(Box<Fn(f32) -> f32 + Sync + Send>),
+    // Custom(Vec<f32>),
 }
 
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Oscillator {
     shape: Types,
     frequency: f32,
+
+    #[serde(skip_serializing)]
     phase: f32,
 }
 
@@ -62,7 +62,7 @@ impl Oscillator {
                 }
             }
             Types::Random => rand::thread_rng().gen_range(-1.0, 1.0),
-            Types::Custom(ref generator) => generator(self.phase),
+            // Types::Custom(ref generator) => generator(self.phase),
         };
 
         // Clamp the value

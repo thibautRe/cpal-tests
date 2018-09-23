@@ -6,6 +6,7 @@ export default class Oscillogram extends React.Component {
     this.canvas = React.createRef()
 
     this.loop = this.loop.bind(this)
+    this.loopActive = true
   }
 
   componentDidMount() {
@@ -15,11 +16,12 @@ export default class Oscillogram extends React.Component {
     }
   }
 
-  loop() {
-    this.props.server.send({ type: "RootDataMessage", data: { target: 'OutputBuffer' } }).then(data => {
-      this.drawBufferOutput(data)
+  async loop() {
+    const data = await this.props.server.send({ type: "RootDataMessage", data: { target: 'OutputBuffer' } })
+    this.drawBufferOutput(data)
+    if (this.loopActive) {
       setTimeout(this.loop, 50)
-    })
+    }
   }
 
   getCanvasCoord(pointNr, amplitude, totalPoints) {
