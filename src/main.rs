@@ -53,6 +53,7 @@ struct RootDataMessage {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type", content = "data")]
 enum MessageTypes {
     InstrumentMessage(InstrumentMessage),
     RootDataMessage(RootDataMessage),
@@ -121,7 +122,7 @@ fn main() {
 
     let test_filter = Arc::new(Mutex::new(filter::BiquadFilter::new(
         sample_rate,
-        200.0,
+        2000.0,
         2.7,
         filter::BiquadFilterTypes::LowPass,
     )));
@@ -232,7 +233,9 @@ fn main() {
                     // Change an instrument's parameter
                     MessageTypes::InstrumentMessage(message) => match message.parameter {
                         InstrumentParameter::Frequency => {
-                            test_filter.set_frequency(message.value * 200.0);
+                            let new_freq = (message.value * 100.0).powi(2);
+                            println!("{}", new_freq);
+                            test_filter.set_frequency(new_freq);
                             serde_json::to_string(&default_res).unwrap()
                         }
                         InstrumentParameter::Q => {
