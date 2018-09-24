@@ -16,7 +16,7 @@ use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use instrument::{Instrument, InstrumentParameter};
+use instrument::{Instrument, InstrumentSetParameter};
 use oscillator::Oscillator;
 
 use tokio::io;
@@ -27,17 +27,6 @@ struct TripleOsc {
     osc1: Oscillator,
     osc2: Oscillator,
     osc3: Oscillator,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct InstrumentSetValue {
-    value: f32,
-    parameter: InstrumentParameter,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct InstrumentGetValue {
-    parameter: InstrumentParameter,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -53,8 +42,7 @@ struct RootDataMessage {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type", content = "data")]
 enum MessageTypes {
-    // InstrumentSetValue(InstrumentSetValue),
-    // InstrumentGetValue(InstrumentGetValue),
+    InstrumentSetParameter(String, instrument::InstrumentSetParameter),
     InstrumentGetState(String),
     RootDataMessage(RootDataMessage),
 }
@@ -71,6 +59,17 @@ struct Response<T> {
     payload: Option<T>,
 }
 
+impl TripleOsc {
+    fn get_oscillator_mut(&mut self, id: i8) -> Option<&mut Oscillator> {
+        match id {
+            1 => Some(&mut self.osc1),
+            2 => Some(&mut self.osc2),
+            3 => Some(&mut self.osc3),
+            _ => None,
+        }
+    }
+}
+
 impl Instrument for TripleOsc {
     fn get_next_value(&mut self, sample_rate: f32) -> f32 {
         // Add all fields
@@ -82,6 +81,37 @@ impl Instrument for TripleOsc {
     fn get_state(&self) -> instrument::InstrumentState {
         let oscillators = vec![&self.osc1, &self.osc2, &self.osc3];
         serde_json::to_value(oscillators).unwrap()
+    }
+
+    fn set_parameter(&mut self, set_parameter: InstrumentSetParameter) {
+        let mut iter = set_parameter.parameter.split_whitespace();
+
+        match iter.next() {
+            Some("osc") => {
+                if let Some(osc_id) = iter.next() {
+                    let id = osc_id.parse::<i8>().unwrap();
+                    let mut osc = self.get_oscillator_mut(id).unwrap();
+                    match iter.next() {
+                        Some("frequency") => {
+                            osc.set_frequency(set_parameter.value.as_f64().unwrap() as f32);
+                        }
+                        Some("shape") => {
+                            let shape: oscillator::Types =
+                                serde_json::from_value(set_parameter.value).unwrap();
+                            osc.set_shape(shape);
+                        }
+                        Some(unknown) => println!("Unknown type \"{}\"", unknown),
+                        None => println!(
+                            "You need to provide a parameter to change for oscillator {}",
+                            id
+                        ),
+                    }
+                }
+            }
+            _ => {
+                println!("Unknown parameter");
+            }
+        }
     }
 }
 
@@ -229,7 +259,7 @@ fn main() {
             let output_values = output_values.clone();
             let instruments = instruments.clone();
             let writes = responses.fold(writer, move |writer, message| {
-                let instruments = instruments.lock().unwrap();
+                let mut instruments = instruments.lock().unwrap();
                 let id = message.id;
                 let default_res: Response<f32> = Response { id, payload: None };
 
@@ -246,26 +276,12 @@ fn main() {
                     //         serde_json::to_string(&default_res).unwrap()
                     //     }
                     // },
+                    MessageTypes::InstrumentSetParameter(instrument_id, set_parameter) => {
+                        let mut instrument = instruments.get_mut(&instrument_id).unwrap();
+                        instrument.set_parameter(set_parameter);
+                        serde_json::to_string(&default_res).unwrap()
+                    }
 
-                    // MessageTypes::InstrumentGetValue(message) => match message.parameter {
-                    //     InstrumentParameter::Frequency => {
-                    //         let freq = test_filter.get_frequency();
-                    //         let res = Response {
-                    //             id,
-                    //             payload: Some(freq.sqrt() / 100.0),
-                    //         };
-                    //         serde_json::to_string(&res).unwrap()
-                    //     }
-
-                    //     InstrumentParameter::Q => {
-                    //         let q = test_filter.get_Q();
-                    //         let res = Response {
-                    //             id,
-                    //             payload: Some((q - 0.1) / 10.0),
-                    //         };
-                    //         serde_json::to_string(&res).unwrap()
-                    //     }
-                    // },
                     MessageTypes::InstrumentGetState(instrument_id) => {
                         let instrument = instruments.get(&instrument_id).unwrap();
                         let res = Response {

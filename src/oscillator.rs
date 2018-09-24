@@ -62,7 +62,6 @@ impl Oscillator {
                 }
             }
             Types::Random => rand::thread_rng().gen_range(-1.0, 1.0),
-            // Types::Custom(ref generator) => generator(self.phase),
         };
 
         // Clamp the value
@@ -75,6 +74,10 @@ impl Oscillator {
 
     pub fn set_frequency(&mut self, target_frequency: f32) {
         self.frequency = target_frequency;
+    }
+
+    pub fn set_shape(&mut self, shape: Types) {
+        self.shape = shape;
     }
 
     pub fn set_exp_frequency(&mut self, target_frequency: f32, exp: f32) {
