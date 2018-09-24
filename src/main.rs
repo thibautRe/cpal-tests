@@ -16,7 +16,7 @@ use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use instrument::{Instrument, InstrumentSetParameter};
+use instrument::{Instrument, InstrumentSetParameter, OutputNode};
 use oscillator::Oscillator;
 
 use tokio::io;
@@ -70,14 +70,16 @@ impl TripleOsc {
     }
 }
 
-impl Instrument for TripleOsc {
+impl OutputNode for TripleOsc {
     fn get_next_value(&mut self, sample_rate: f32) -> f32 {
         // Add all fields
         self.osc1.get_value(sample_rate)
             + self.osc2.get_value(sample_rate)
             + self.osc3.get_value(sample_rate)
     }
+}
 
+impl Instrument for TripleOsc {
     fn get_state(&self) -> instrument::InstrumentState {
         let oscillators = vec![&self.osc1, &self.osc2, &self.osc3];
         serde_json::to_value(oscillators).unwrap()
@@ -149,16 +151,11 @@ fn main() {
         osc3: Oscillator::new(55.0, oscillator::Types::Sawtooth),
     };
 
+    // let biquadFilter = filter::BiquadFilter::new(sample_rate, 2000.0, 2.7, filter::BiquadFilterTypes::LowPass);
+
     let mut instruments = HashMap::new();
     instruments.insert(String::from("triple_osc"), triple_osc);
     let instruments = Arc::new(Mutex::new(instruments));
-
-    // let test_filter = Arc::new(Mutex::new(filter::BiquadFilter::new(
-    //     sample_rate,
-    //     2000.0,
-    //     2.7,
-    //     filter::BiquadFilterTypes::LowPass,
-    // )));
 
     // Generate the next value
     let mut next_value = || {
