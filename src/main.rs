@@ -16,7 +16,7 @@ use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use instrument::{Instrument, InstrumentSetParameter, OutputNode};
+use instrument::{Instrument, InstrumentSetParameter, Instruments, OutputNode};
 use oscillator::Oscillator;
 
 use tokio::io;
@@ -153,15 +153,16 @@ fn main() {
 
     // let biquadFilter = filter::BiquadFilter::new(sample_rate, 2000.0, 2.7, filter::BiquadFilterTypes::LowPass);
 
-    let mut instruments = HashMap::new();
-    instruments.insert(String::from("triple_osc"), triple_osc);
+    let mut instruments = Instruments::new();
+    instruments.add_instrument(String::from("triple_osc"), triple_osc);
+
     let instruments = Arc::new(Mutex::new(instruments));
 
     // Generate the next value
     let mut next_value = || {
         let mut instruments = instruments.lock().unwrap();
         let mut output = 0.0;
-        for (_, val) in instruments.iter_mut() {
+        for (_, val) in instruments.get_instruments().iter_mut() {
             output += val.get_next_value(sample_rate);
         }
 

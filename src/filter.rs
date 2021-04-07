@@ -24,7 +24,7 @@ pub enum BiquadFilterTypes {
 ///     sample_rate,
 ///     2000.0,
 ///     2.7,
-///     filter::BiquadFilterTypes::LowPass,
+///     BiquadFilterTypes::LowPass,
 /// ))
 #[allow(non_snake_case)]
 pub struct BiquadFilter {
